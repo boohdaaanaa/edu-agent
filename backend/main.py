@@ -12,13 +12,6 @@ load_dotenv()
 
 app = FastAPI(title="EduAgent API", version="1.0.0")
 
-@app.get("/")
-async def root():
-    return {
-        "message": "EduAgent API працює",
-        "docs": "http://127.0.0.1:8000/docs"
-    }
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173"],
@@ -33,29 +26,73 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 TAVILY_BASE_URL = "https://api.tavily.com"
 
-SYSTEM_PROMPT = """Ти — освітній AI-агент для університетської кафедри. 
-Твоя задача — знаходити, аналізувати та структурувати навчальні матеріали: 
-навчальні програми, методичні вказівки, навчальні плани, підручники та освітні проекти.
+# --- Категорії та їх пошукові стратегії ---
+CATEGORY_SEARCH_CONFIG = {
+    "навчальна програма": {
+        "suffixes": ["навчальна програма курс", "curriculum syllabus"],
+        "boost": "навчальна програма дисципліна",
+    },
+    "методичні вказівки": {
+        "suffixes": ["методичні вказівки методичний посібник лабораторні роботи"],
+        "boost": "методичні вказівки практичні завдання",
+    },
+    "навчальний план": {
+        "suffixes": ["навчальний план спеціальність бакалавр магістр"],
+        "boost": "навчальний план освітня програма",
+    },
+    "навчальний проект": {
+        "suffixes": ["навчальний проект студентський проект курсова робота"],
+        "boost": "проект завдання студенти",
+    },
+    "підручник посібник": {
+        "suffixes": ["підручник навчальний посібник PDF завантажити"],
+        "boost": "підручник автор видання",
+    },
+    "силабус курс": {
+        "suffixes": ["силабус курс опис дисципліни"],
+        "boost": "силабус навчальна дисципліна",
+    },
+    "наукова стаття дослідження": {
+        "suffixes": ["наукова стаття дослідження публікація"],
+        "boost": "наукова робота результати",
+    },
+    "стандарт освіти": {
+        "suffixes": ["стандарт вищої освіти МОН України спеціальність"],
+        "boost": "освітній стандарт компетентності",
+    },
+    "": {
+        "suffixes": [""],
+        "boost": "",
+    },
+}
 
-Правила:
-1. Відповідай ЗАВЖДИ українською мовою
-2. Структуруй відповідь чітко: заголовки, розділи, пункти
-3. Виділяй найважливіші знахідки
-4. Вказуй джерела якщо є
-5. Будь конкретним та корисним для академічного використання
-6. Якщо знайдені матеріали містять посилання — включай їх
+SYSTEM_PROMPT = """Ти — освітній AI-агент для університетської кафедри.
+Твоя задача — аналізувати знайдені матеріали та давати структурований звіт.
 
-Формат відповіді:
-- Короткий огляд знайденого
-- Детальний аналіз по розділах
-- Рекомендації для кафедри
-- Корисні посилання (якщо є)"""
+КРИТИЧНО ВАЖЛИВІ ПРАВИЛА:
+1. Відповідай ВИКЛЮЧНО українською мовою
+2. Аналізуй ТІЛЬКИ те, що є в наданих джерелах — не вигадуй
+3. НЕ додавай розділ "Корисні посилання" — посилання вже є в джерелах нижче
+4. НЕ повторюй список джерел у відповіді — вони відображаються окремо в інтерфейсі
+5. Якщо в джерелах мало інформації по темі — чесно вкажи це
 
+СТРУКТУРА ВІДПОВІДІ (суворо дотримуйся):
+## Огляд знахідок
+(2-3 речення: що знайдено, наскільки релевантно)
 
-class SearchRequest(BaseModel):
-    query: str
-    search_depth: Optional[str] = "advanced"
-    max_results: Optional[int] = 5
+## Детальний аналіз
+(розбий по підрозділах залежно від знайденого контенту)
+
+## Ключові висновки
+(конкретні факти, цифри, назви з джерел)
+
+## Рекомендації для кафедри
+(практичні кроки на основі знайденого)
+
+ЗАБОРОНЕНО:
+- Вигадувати посилання або URL
+- Додавати розділ з посиланнями
+- Повторювати ті ж самі пункти в різних розділах"""
 
 
 class AgentRequest(BaseModel):
@@ -63,20 +100,48 @@ class AgentRequest(BaseModel):
     category: Optional[str] = "навчальна програма"
 
 
-async def tavily_search(query: str, search_depth: str = "advanced", max_results: int = 5) -> dict:
-    """Search the web using Tavily API"""
+def build_search_query(topic: str, category: str) -> str:
+    """
+    Будує точний пошуковий запит.
+    Зберігає власні назви (КПІ, Харків тощо) та не розмиває їх загальними словами.
+    """
+    topic = topic.strip()
+    category = (category or "").strip()
+
+    config = CATEGORY_SEARCH_CONFIG.get(category, CATEGORY_SEARCH_CONFIG[""])
+
+    if not category:
+        return topic
+
+    suffix = config["suffixes"][0]
+    if suffix:
+        return f"{topic} {suffix}"
+    return topic
+
+
+def deduplicate_sources(results: list) -> list:
+    """Прибирає дублікати джерел за URL."""
+    seen_urls = set()
+    unique = []
+    for r in results:
+        url = r.get("url", "").rstrip("/").lower()
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique.append(r)
+    return unique
+
+
+async def tavily_search(query: str, max_results: int = 7) -> dict:
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{TAVILY_BASE_URL}/search",
             json={
                 "api_key": TAVILY_API_KEY,
                 "query": query,
-                "search_depth": search_depth,
+                "search_depth": "advanced",
                 "include_answer": True,
                 "include_raw_content": False,
                 "max_results": max_results,
-                "include_domains": [],
-                "exclude_domains": []
             }
         )
         if response.status_code != 200:
@@ -84,127 +149,56 @@ async def tavily_search(query: str, search_depth: str = "advanced", max_results:
         return response.json()
 
 
-async def groq_chat(messages: list, model: str = "llama-3.3-70b-versatile") -> str:
-    """Call Groq API for chat completion"""
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
-            f"{GROQ_BASE_URL}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": 0.3,
-                "max_tokens": 4000,
-            }
-        )
-        if response.status_code != 200:
-            raise HTTPException(status_code=502, detail=f"Groq error: {response.text}")
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
-
-
 @app.get("/health")
 async def health():
     return {"status": "ok", "groq": bool(GROQ_API_KEY), "tavily": bool(TAVILY_API_KEY)}
 
 
-@app.post("/api/search")
-async def search_only(req: SearchRequest):
-    """Raw web search endpoint"""
-    if not TAVILY_API_KEY:
-        raise HTTPException(status_code=400, detail="TAVILY_API_KEY not set")
-    results = await tavily_search(req.query, req.search_depth, req.max_results)
-    return results
-
-
 @app.post("/api/agent")
-async def run_agent(req: AgentRequest):
-    """Main agent endpoint: search + analyze + respond"""
+async def run_agent_stream(req: AgentRequest):
     if not GROQ_API_KEY:
-        raise HTTPException(status_code=400, detail="GROQ_API_KEY not set")
+        raise HTTPException(status_code=400, detail="GROQ_API_KEY не встановлено")
     if not TAVILY_API_KEY:
-        raise HTTPException(status_code=400, detail="TAVILY_API_KEY not set")
+        raise HTTPException(status_code=400, detail="TAVILY_API_KEY не встановлено")
 
-    # Step 1: Build search query
-    search_query = f"{req.category} {req.topic} університет навчальна програма"
+    category = req.category or ""
+    search_query = build_search_query(req.topic, category)
 
-    # Step 2: Web search
-    search_results = await tavily_search(search_query, max_results=6)
+    search_results = await tavily_search(search_query, max_results=8)
 
-    # Step 3: Prepare context from search results
+    raw_results = search_results.get("results", [])
+    unique_results = deduplicate_sources(raw_results)
+
     search_context = ""
     sources = []
 
     if search_results.get("answer"):
         search_context += f"Загальна відповідь пошуку:\n{search_results['answer']}\n\n"
 
-    for i, result in enumerate(search_results.get("results", []), 1):
+    for i, result in enumerate(unique_results, 1):
         title = result.get("title", "")
         url = result.get("url", "")
-        content = result.get("content", "")[:800]
-        search_context += f"[Джерело {i}] {title}\nURL: {url}\nЗміст: {content}\n\n"
-        sources.append({"title": title, "url": url, "score": result.get("score", 0)})
+        content = result.get("content", "")[:1000]
+        search_context += f"[Джерело {i}]\nНазва: {title}\nURL: {url}\nЗміст: {content}\n\n"
+        sources.append({
+            "title": title,
+            "url": url,
+            "score": round(result.get("score", 0), 3)
+        })
 
-    # Step 4: AI analysis
+    category_label = category if category else "загальний пошук"
+
     user_message = f"""Тема запиту: "{req.topic}"
-Категорія: {req.category}
+Тип матеріалу: {category_label}
+Пошуковий запит що використовувався: "{search_query}"
 
-Результати веб-пошуку:
+=== ЗНАЙДЕНІ ДЖЕРЕЛА ===
 {search_context}
+=== КІНЕЦЬ ДЖЕРЕЛ ===
 
-Проаналізуй знайдену інформацію та надай детальний звіт для університетської кафедри.
-Структуруй відповідь з чіткими розділами. Включи конкретні знахідки, приклади та рекомендації."""
-
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_message}
-    ]
-
-    analysis = await groq_chat(messages)
-
-    return {
-        "topic": req.topic,
-        "category": req.category,
-        "search_query": search_query,
-        "analysis": analysis,
-        "sources": sources,
-        "total_sources": len(sources)
-    }
-
-
-@app.post("/api/agent/stream")
-async def run_agent_stream(req: AgentRequest):
-    """Streaming version of agent endpoint"""
-    if not GROQ_API_KEY:
-        raise HTTPException(status_code=400, detail="GROQ_API_KEY not set")
-    if not TAVILY_API_KEY:
-        raise HTTPException(status_code=400, detail="TAVILY_API_KEY not set")
-
-    search_query = f"{req.category} {req.topic} університет"
-    search_results = await tavily_search(search_query, max_results=6)
-
-    search_context = ""
-    sources = []
-
-    if search_results.get("answer"):
-        search_context += f"Загальна відповідь:\n{search_results['answer']}\n\n"
-
-    for i, result in enumerate(search_results.get("results", []), 1):
-        title = result.get("title", "")
-        url = result.get("url", "")
-        content = result.get("content", "")[:800]
-        search_context += f"[{i}] {title}\n{url}\n{content}\n\n"
-        sources.append({"title": title, "url": url})
-
-    user_message = f"""Тема: "{req.topic}", Категорія: {req.category}
-
-Результати пошуку:
-{search_context}
-
-Надай детальний аналіз для кафедри."""
+Проаналізуй знайдену інформацію. 
+НЕ додавай розділ з посиланнями — вони відображаються окремо.
+НЕ вигадуй інформацію якої немає в джерелах."""
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -212,11 +206,9 @@ async def run_agent_stream(req: AgentRequest):
     ]
 
     async def generate():
-        # First yield sources as metadata
-        yield f"data: {json.dumps({'type': 'sources', 'sources': sources, 'query': search_query})}\n\n"
+        yield f"data: {json.dumps({'type': 'sources', 'sources': sources, 'query': search_query}, ensure_ascii=False)}\n\n"
 
-        # Stream from Groq
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=90.0) as client:
             async with client.stream(
                 "POST",
                 f"{GROQ_BASE_URL}/chat/completions",
@@ -227,8 +219,8 @@ async def run_agent_stream(req: AgentRequest):
                 json={
                     "model": "llama-3.3-70b-versatile",
                     "messages": messages,
-                    "temperature": 0.3,
-                    "max_tokens": 4000,
+                    "temperature": 0.2,
+                    "max_tokens": 4096,
                     "stream": True
                 }
             ) as response:
@@ -237,14 +229,15 @@ async def run_agent_stream(req: AgentRequest):
                         data_str = line[6:]
                         if data_str == "[DONE]":
                             yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                            break
+                            return
                         try:
                             data = json.loads(data_str)
                             delta = data["choices"][0]["delta"]
                             if "content" in delta and delta["content"]:
-                                yield f"data: {json.dumps({'type': 'token', 'content': delta['content']})}\n\n"
+                                yield f"data: {json.dumps({'type': 'token', 'content': delta['content']}, ensure_ascii=False)}\n\n"
                         except Exception:
                             continue
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

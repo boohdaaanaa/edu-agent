@@ -1,25 +1,25 @@
 import { useState } from 'react'
 
 const CATEGORIES = [
-  { value: 'навчальна програма', label: 'Навчальна програма', icon: '📚' },
-  { value: 'методичні вказівки', label: 'Методичні вказівки', icon: '📋' },
-  { value: 'навчальний план', label: 'Навчальний план', icon: '🗓' },
-  { value: 'навчальний проект', label: 'Навчальний проект', icon: '🔬' },
-  { value: 'підручник посібник', label: 'Підручники та посібники', icon: '📖' },
-  { value: 'силабус курс', label: 'Силабуси', icon: '📝' },
-  { value: 'наукова стаття дослідження', label: 'Наукові статті', icon: '🔭' },
-  { value: 'стандарт освіти', label: 'Освітні стандарти', icon: '🏛' },
+  { value: '',                          label: 'Вільний пошук',         icon: '🔍' },
+  { value: 'навчальна програма',        label: 'Навчальна програма',    icon: '📚' },
+  { value: 'методичні вказівки',        label: 'Методичні вказівки',    icon: '📋' },
+  { value: 'навчальний план',           label: 'Навчальний план',       icon: '🗓' },
+  { value: 'навчальний проект',         label: 'Навчальний проект',     icon: '🔬' },
+  { value: 'підручник посібник',        label: 'Підручники та посібники', icon: '📖' },
+  { value: 'силабус курс',              label: 'Силабуси',              icon: '📝' },
+  { value: 'наукова стаття дослідження',label: 'Наукові статті',        icon: '🔭' },
+  { value: 'стандарт освіти',           label: 'Освітні стандарти',     icon: '🏛' },
 ]
 
 const SUGGESTIONS = [
   'Комп\'ютерні науки',
-  'Штучний інтелект та машинне навчання',
+  'Штучний інтелект',
   'Програмна інженерія',
   'Кібербезпека',
   'Бази даних',
-  'Алгоритми та структури даних',
+  'Алгоритми',
   'Веб-розробка',
-  'Комп\'ютерні мережі',
 ]
 
 export default function SearchForm({ onSubmit, isLoading }) {
@@ -31,20 +31,17 @@ export default function SearchForm({ onSubmit, isLoading }) {
     if (topic.trim()) onSubmit(topic.trim(), category)
   }
 
-  const handleSuggestion = (s) => {
-    setTopic(s)
-  }
-
   return (
     <div style={styles.container}>
       <form onSubmit={handleSubmit} style={styles.form}>
+
         {/* Category selector */}
         <div style={styles.field}>
           <label style={styles.label}>Тип матеріалу</label>
           <div style={styles.categoryGrid}>
             {CATEGORIES.map(cat => (
               <button
-                key={cat.value}
+                key={cat.value + cat.label}
                 type="button"
                 onClick={() => setCategory(cat.value)}
                 style={{
@@ -57,6 +54,12 @@ export default function SearchForm({ onSubmit, isLoading }) {
               </button>
             ))}
           </div>
+          {category === '' && (
+            <div style={styles.hintBox}>
+              💡 <strong>Вільний пошук</strong> — шукає точно по вашій темі без прив'язки до типу документа.
+              Підходить для запитів типу «ціна навчання в КПІ», «вступ до КПІ» тощо.
+            </div>
+          )}
         </div>
 
         {/* Topic input */}
@@ -73,7 +76,11 @@ export default function SearchForm({ onSubmit, isLoading }) {
               type="text"
               value={topic}
               onChange={e => setTopic(e.target.value)}
-              placeholder="Наприклад: Штучний інтелект для бакалаврів..."
+              placeholder={
+                category === ''
+                  ? 'Наприклад: ціна навчання КПІ 2024...'
+                  : 'Наприклад: КПІ комп\'ютерні науки...'
+              }
               style={styles.input}
               disabled={isLoading}
             />
@@ -88,7 +95,7 @@ export default function SearchForm({ onSubmit, isLoading }) {
               <button
                 key={s}
                 type="button"
-                onClick={() => handleSuggestion(s)}
+                onClick={() => setTopic(s)}
                 style={styles.suggBtn}
                 disabled={isLoading}
               >
@@ -126,60 +133,37 @@ export default function SearchForm({ onSubmit, isLoading }) {
       <style>{`
         input:focus { outline: none; border-color: var(--accent-primary) !important; box-shadow: 0 0 0 3px rgba(79,142,247,0.15) !important; }
         input::placeholder { color: var(--text-muted); }
+        button[style*="catBtn"]:hover:not(:disabled) { border-color: var(--border-accent); color: var(--text-primary); }
+        @keyframes spin { from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
       `}</style>
     </div>
   )
 }
 
 const styles = {
-  container: {
-    width: '100%',
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '24px',
-  },
-  field: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-  },
+  container: { width: '100%' },
+  form: { display: 'flex', flexDirection: 'column', gap: '24px' },
+  field: { display: 'flex', flexDirection: 'column', gap: '10px' },
   label: {
-    fontFamily: 'var(--font-display)',
-    fontSize: '0.7rem',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    letterSpacing: '0.1em',
-    textTransform: 'uppercase',
+    fontFamily: 'var(--font-display)', fontSize: '0.7rem', fontWeight: 600,
+    color: 'var(--text-secondary)', letterSpacing: '0.1em', textTransform: 'uppercase',
   },
   labelSmall: {
-    fontFamily: 'var(--font-display)',
-    fontSize: '0.65rem',
-    fontWeight: 600,
-    color: 'var(--text-muted)',
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase',
+    fontFamily: 'var(--font-display)', fontSize: '0.65rem', fontWeight: 600,
+    color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase',
   },
   categoryGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))',
     gap: '8px',
   },
   catBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 14px',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    fontSize: '0.82rem',
-    fontFamily: 'var(--font-body)',
-    textAlign: 'left',
+    display: 'flex', alignItems: 'center', gap: '8px',
+    padding: '10px 14px', background: 'var(--bg-elevated)',
+    border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-secondary)', cursor: 'pointer',
+    transition: 'all 0.2s', fontSize: '0.82rem',
+    fontFamily: 'var(--font-body)', textAlign: 'left',
   },
   catBtnActive: {
     background: 'rgba(79,142,247,0.12)',
@@ -188,77 +172,49 @@ const styles = {
   },
   catIcon: { fontSize: '1rem', flexShrink: 0 },
   catLabel: { lineHeight: 1.3 },
-  inputWrapper: {
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
+  hintBox: {
+    padding: '10px 14px',
+    background: 'rgba(240,164,41,0.08)',
+    border: '1px solid rgba(240,164,41,0.25)',
+    borderRadius: 'var(--radius-sm)',
+    fontSize: '0.82rem',
+    color: 'var(--text-secondary)',
+    fontFamily: 'var(--font-body)',
+    lineHeight: 1.5,
   },
+  inputWrapper: { position: 'relative', display: 'flex', alignItems: 'center' },
   inputIcon: {
-    position: 'absolute',
-    left: '14px',
-    color: 'var(--text-muted)',
-    display: 'flex',
-    alignItems: 'center',
-    pointerEvents: 'none',
+    position: 'absolute', left: '14px',
+    color: 'var(--text-muted)', display: 'flex',
+    alignItems: 'center', pointerEvents: 'none',
   },
   input: {
-    width: '100%',
-    padding: '14px 14px 14px 44px',
-    background: 'var(--bg-elevated)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-md)',
-    color: 'var(--text-primary)',
-    fontSize: '0.95rem',
-    fontFamily: 'var(--font-body)',
-    transition: 'all 0.2s',
+    width: '100%', padding: '14px 14px 14px 44px',
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
+    fontSize: '0.95rem', fontFamily: 'var(--font-body)', transition: 'all 0.2s',
   },
-  suggestions: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
-  },
+  suggestions: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
   suggBtn: {
-    padding: '6px 14px',
-    background: 'transparent',
-    border: '1px solid var(--border)',
-    borderRadius: '20px',
-    color: 'var(--text-muted)',
-    fontSize: '0.8rem',
-    fontFamily: 'var(--font-body)',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
+    padding: '6px 14px', background: 'transparent',
+    border: '1px solid var(--border)', borderRadius: '20px',
+    color: 'var(--text-muted)', fontSize: '0.8rem',
+    fontFamily: 'var(--font-body)', cursor: 'pointer', transition: 'all 0.2s',
   },
   submitBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '10px',
-    width: '100%',
-    padding: '15px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+    width: '100%', padding: '15px',
     background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
-    border: 'none',
-    borderRadius: 'var(--radius-md)',
-    color: '#fff',
-    fontSize: '0.95rem',
-    fontFamily: 'var(--font-display)',
-    fontWeight: 600,
-    letterSpacing: '0.03em',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
+    border: 'none', borderRadius: 'var(--radius-md)', color: '#fff',
+    fontSize: '0.95rem', fontFamily: 'var(--font-display)', fontWeight: 600,
+    letterSpacing: '0.03em', cursor: 'pointer', transition: 'all 0.2s',
     boxShadow: '0 4px 20px rgba(79,142,247,0.3)',
   },
-  submitBtnDisabled: {
-    opacity: 0.5,
-    cursor: 'not-allowed',
-    boxShadow: 'none',
-  },
+  submitBtnDisabled: { opacity: 0.5, cursor: 'not-allowed', boxShadow: 'none' },
   spinnerSmall: {
-    width: '16px',
-    height: '16px',
+    width: '16px', height: '16px',
     border: '2px solid rgba(255,255,255,0.3)',
-    borderTopColor: '#fff',
-    borderRadius: '50%',
-    display: 'inline-block',
-    animation: 'spin 0.8s linear infinite',
+    borderTopColor: '#fff', borderRadius: '50%',
+    display: 'inline-block', animation: 'spin 0.8s linear infinite',
   }
 }

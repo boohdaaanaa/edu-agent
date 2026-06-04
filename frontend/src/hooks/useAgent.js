@@ -8,6 +8,7 @@ export function useAgent() {
   const [searchQuery, setSearchQuery] = useState('')
   const [error, setError] = useState(null)
   const abortRef = useRef(null)
+  const fullTextRef = useRef('')
 
   const run = useCallback(async (topic, category) => {
     setStatus('searching')
@@ -16,11 +17,12 @@ export function useAgent() {
     setSources([])
     setSearchQuery('')
     setError(null)
+    fullTextRef.current = ''
 
     abortRef.current = new AbortController()
 
     try {
-      const response = await fetch('/api/agent/stream', {
+      const response = await fetch('http://127.0.0.1:8000/api/agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic, category }),
@@ -28,14 +30,14 @@ export function useAgent() {
       })
 
       if (!response.ok) {
-        const err = await response.json()
+        const err = await response.json().catch(() => ({ detail: 'Помилка сервера' }))
         throw new Error(err.detail || 'Помилка сервера')
       }
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
-      let fullText = ''
+      let receivedDone = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -58,20 +60,20 @@ export function useAgent() {
               setSearchQuery(data.query || '')
               setStatus('analyzing')
             } else if (data.type === 'token') {
-              fullText += data.content
-              setStreamText(fullText)
+              fullTextRef.current += data.content
+              setStreamText(fullTextRef.current)
             } else if (data.type === 'done') {
-              setResult(fullText)
+              receivedDone = true
+              setResult(fullTextRef.current)
               setStatus('done')
             }
           } catch (e) {
-            // ignore parse errors
-          }
+            console.error('Помилка парсингу даних:', e)}
         }
       }
 
-      if (status !== 'done') {
-        setResult(fullText)
+      if (!receivedDone) {
+        setResult(fullTextRef.current)
         setStatus('done')
       }
 
@@ -98,6 +100,7 @@ export function useAgent() {
     setSources([])
     setSearchQuery('')
     setError(null)
+    fullTextRef.current = ''
   }, [])
 
   return { status, result, streamText, sources, searchQuery, error, run, cancel, reset }

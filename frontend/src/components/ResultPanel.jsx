@@ -1,8 +1,21 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+// Дедуплікація джерел на фронтенді (додатковий захист)
+function deduplicateSources(sources) {
+  const seen = new Set()
+  return sources.filter(s => {
+    const key = (s.url || '').replace(/\/$/, '').toLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 export default function ResultPanel({ text, isStreaming, sources, onReset }) {
   if (!text && !isStreaming) return null
+
+  const uniqueSources = deduplicateSources(sources || [])
 
   const handleCopy = () => {
     navigator.clipboard.writeText(text || '')
