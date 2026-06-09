@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 
 export function useAgent() {
-  const [status, setStatus] = useState('idle') // idle | searching | analyzing | done | error
+  const [status, setStatus] = useState('idle')
   const [result, setResult] = useState(null)
   const [streamText, setStreamText] = useState('')
   const [sources, setSources] = useState([])

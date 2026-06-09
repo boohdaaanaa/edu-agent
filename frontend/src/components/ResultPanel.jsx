@@ -1,7 +1,6 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-// Дедуплікація джерел на фронтенді (додатковий захист)
 function deduplicateSources(sources) {
   const seen = new Set()
   return sources.filter(s => {
